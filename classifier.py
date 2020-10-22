@@ -12,9 +12,11 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 import re
 import json
 import io
+from nltk.stem import WordNetLemmatizer
+from nltk import pos_tag 
 
 test_size = 0.2
-vocab_size = 1000
+vocab_size = 20000
 trunc_type = 'post'
 pad_type = 'post'
 embedd_dim = 32
@@ -23,10 +25,11 @@ epochs = 5
 batch_size = 128
 global tokenizer
 english_stopwords = set(stopwords.words('english'))
+lemmatizer = WordNetLemmatizer()
 
 def load_dataset(filename):
 	data = pd.read_csv(filename)
-	print(data.head)
+	#print(data.head)
 	return data
 
 def clean_data(df):
@@ -38,6 +41,7 @@ def clean_data(df):
 	reviews = reviews.apply(lambda review : [w for w in review.split() if w not in english_stopwords])
 	#print(len(reviews[0]))
 	reviews = reviews.apply(lambda review: [w.lower() for w in review]) 
+	reviews = reviews.apply(lambda review: [lemmatizer.lemmatize(w, tag[0].lower()) for w, tag in pos_tag(review) if tag[0].lower() in ['a', 'r', 'n', 'v']])
 	#print(labels.head())
 	label_encoder = preprocessing.LabelEncoder()
 	labels = label_encoder.fit_transform(labels)
@@ -54,18 +58,18 @@ def get_max_length(reviews):
 	return int(np.ceil(np.mean(review_length)))
 
 def tokenize_pad_trunc(train_reviews, test_reviews, max_len):
-	tokenizer = Tokenizer(lower= False)
+	tokenizer = Tokenizer(num_words = vocab_size, lower= False)
 	tokenizer.fit_on_texts(train_reviews)
-	print(type(train_reviews))
+	#print(type(train_reviews))
 	train_reviews = tokenizer.texts_to_sequences(train_reviews)
 	test_reviews = tokenizer.texts_to_sequences(test_reviews)
 	train_reviews = pad_sequences(train_reviews, maxlen=max_len, padding= pad_type,truncating= trunc_type)
 	test_reviews = pad_sequences(test_reviews, maxlen=max_len, padding= pad_type ,truncating= trunc_type)
 	total_words = int(len(tokenizer.word_index) + 1)
 
-	print('Encoded X Train\n', train_reviews, '\n')
-	print('Encoded X Test\n', test_reviews, '\n')
-	print('Maximum review length: ', max_len)
+	#print('Encoded X Train\n', train_reviews, '\n')
+	#print('Encoded X Test\n', test_reviews, '\n')
+	#print('Maximum review length: ', max_len)
 	#print(reviews[0])
 	return tokenizer, train_reviews, test_reviews, total_words
 
@@ -106,13 +110,13 @@ def plot_training(history):
 	plt.title('Training and validation accuracy')
 	plt.legend()
 	plt.figure()
-	plt.savefig('training_validation_accuracy.png')
+	plt.savefig('lstm_sigmoid_20000vocab_training_validation_accuracy.png')
 
 	plt.plot(epochs, loss, 'r', label='Training Loss')
 	plt.plot(epochs, val_loss, 'b', label='Validation Loss')
 	plt.title('Training and validation loss')
 	plt.legend()
-	plt.savefig('training_validation_loss.png')
+	plt.savefig('lstm_sigmoid_20000vocab_training_validation_loss.png')
 
 	plt.show()
 
@@ -130,5 +134,5 @@ model = sentiment_classification_model(total_words, max_len)
 checkpoint = checkpoint_model()
 history = model.fit(reviews_train, labels_train, validation_data = (reviews_test, labels_test), batch_size = 128, epochs = 5, callbacks=[checkpoint])
 plot_training(history)
-model.save('lstm.h5')
+model.save('20000Vocab_sigmoid_lstm.h5')
 
