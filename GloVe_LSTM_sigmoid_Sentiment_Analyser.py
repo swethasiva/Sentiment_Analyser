@@ -12,20 +12,17 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 import re
 import json
 import io
-from nltk.stem import WordNetLemmatizer
-from nltk import pos_tag 
 
 test_size = 0.2
 vocab_size = 40000
 trunc_type = 'post'
 pad_type = 'post'
-embedd_dim = 32
+embedd_dim = 100
 lstm_out = 64
-epochs = 15
+epochs = 5
 batch_size = 128
 global tokenizer
 english_stopwords = set(stopwords.words('english'))
-lemmatizer = WordNetLemmatizer()
 
 def load_dataset(filename):
 	data = pd.read_csv(filename)
@@ -37,15 +34,11 @@ def clean_data(df):
 	labels = df['sentiment']
 	reviews = reviews.replace({'<.*?>': ''}, regex = True)         
 	reviews = reviews.replace({'[^A-Za-z]': ' '}, regex = True)
-	print('original length')
-	print(reviews[0] )
+	#print(len(reviews[0]))
 	reviews = reviews.apply(lambda review : [w for w in review.split() if w not in english_stopwords])
+	#print(len(reviews[0]))
 	reviews = reviews.apply(lambda review: [w.lower() for w in review]) 
-	print('before lemm')
-	print(reviews[0])
-	reviews = reviews.apply(lambda review: [lemmatizer.lemmatize(w, tag[0].lower()) for w, tag in pos_tag(review) if tag[0].lower() in ['a', 'r', 'n', 'v']])
-	print('after lemm')
-	print(reviews[0])
+	#print(labels.head())
 	label_encoder = preprocessing.LabelEncoder()
 	labels = label_encoder.fit_transform(labels)
 	return reviews, labels
@@ -76,16 +69,13 @@ def tokenize_pad_trunc(train_reviews, test_reviews, max_len):
 	#print(reviews[0])
 	return tokenizer, train_reviews, test_reviews, total_words
 
-def save_tokenizer(tokenizers):
-	tokenizer_json = tokenizer.to_json()
-	with io.open('tokenizer.json', 'w', encoding='utf-8') as f:
-		f.write(json.dumps(tokenizer_json, ensure_ascii=False))
-
-def sentiment_classification_model(total_words, max_len):
+def sentiment_classification_model(total_words, max_len, embedding_matrix):
 	model = tf.keras.Sequential([
 	  tf.keras.layers.Embedding(total_words, embedd_dim, input_length= max_len),
 	  tf.keras.layers.LSTM(lstm_out),
-	  tf.keras.layers.Dense(2, activation='softmax')])
+	  tf.keras.layers.Dense(1, activation='sigmoid')])
+	model.layers[0].set_weights([embedding_matrix])
+	model.layers[0].trainable = False
 	model.compile(optimizer = 'adam', loss = 'binary_crossentropy', metrics = ['accuracy'])
 	#print(model.summary())
 	return model
@@ -113,26 +103,54 @@ def plot_training(history):
 	plt.title('Training and validation accuracy')
 	plt.legend()
 	plt.figure()
-	#plt.savefig('15epochs_lstm_softmax_40000vocab_training_validation_accuracy.png')
+	plt.savefig('glove_lstm_sigmoid_training_validation_accuracy.png')
 
 	plt.plot(epochs, loss, 'r', label='Training Loss')
 	plt.plot(epochs, val_loss, 'b', label='Validation Loss')
 	plt.title('Training and validation loss')
 	plt.legend()
-	#plt.savefig('15epochs_lstm_softmax_40000vocab_training_validation_loss.png')
+	plt.savefig('glove_lstm_sigmoid_training_validation_loss.png')
 
 	plt.show()
-
 
 data = load_dataset('IMDB Dataset.csv')
 reviews, labels = clean_data(data)
 reviews_train, reviews_test, labels_train, labels_test = split_dataset(reviews, labels)
 max_len = get_max_length(reviews)
+#print(max_len)
+#print(type(reviews_train))
 tokenizer, reviews_train, reviews_test, total_words = tokenize_pad_trunc(reviews_train, reviews_test, max_len)
-save_tokenizer(tokenizer)
-model = sentiment_classification_model(total_words, max_len)
+word_index = tokenizer.word_index
+
+embeddings_index = {}
+
+f = open("glove.6B.100d.txt", encoding='utf-8') #added , encoding='utf-8'
+for line in f:
+    values = line.split()
+    word = values[0]
+    coefs = np.asarray(values[1:], dtype="float32")
+    embeddings_index[word] = coefs
+f.close()
+
+print("found %s word vectors." % len (embeddings_index))
+
+embedding_dim = 100 # GloVe contains 100-dimensional embedding vectors for 400.000 words
+
+embedding_matrix = np.zeros((vocab_size, embedding_dim)) # embedding_matrix.shape (10000, 100)
+for word, i in word_index.items():
+    if i < vocab_size:
+        embedding_vector = embeddings_index.get(word) # embedding_vector.shape (100,)
+        if embedding_vector is not None:
+            embedding_matrix[i] = embedding_vector # Words not found in the mebedding index will all be zeros
+
+
+print(embedding_matrix.shape)
+
+model = sentiment_classification_model(vocab_size, max_len, embedding_matrix)
 checkpoint = checkpoint_model()
-history = model.fit(reviews_train, labels_train, validation_data = (reviews_test, labels_test), batch_size = 128, epochs = epochs, callbacks=[checkpoint])
+history = model.fit(reviews_train, labels_train, validation_data = (reviews_test, labels_test), batch_size = 128, epochs = 5, callbacks=[checkpoint])
 plot_training(history)
-#model.save('15_epochs_40000vocab_softmax_lstm.h5')
+model.save('glove_sigmoid_lstm.h5')
+
+
 
