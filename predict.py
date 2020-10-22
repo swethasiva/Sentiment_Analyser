@@ -1,0 +1,42 @@
+import pandas as pd
+import numpy as np
+from nltk.corpus import stopwords
+from sklearn import preprocessing
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.preprocessing.text import Tokenizer, tokenizer_from_json
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense, Embedding, LSTM
+from tensorflow.keras.callbacks import ModelCheckpoint
+import re
+import json
+import io
+
+english_stopwords = set(stopwords.words('english'))
+max_len = 130
+
+loaded_model = load_model('lstm.h5')
+with open('tokenizer.json') as f:
+    data = json.load(f)
+    tokenizer = tokenizer_from_json(data)
+review = "It was not a bad movie, worth the time"
+regex = re.compile(r'[^a-zA-Z\s]')
+review = regex.sub('', review)
+print('Cleaned: ', review)
+
+words = review.split(' ')
+filtered = [w for w in words if w not in english_stopwords]
+filtered = ' '.join(filtered)
+filtered = [filtered.lower()]
+
+print('Filtered: ', filtered)
+tokenize_words = tokenizer.texts_to_sequences(filtered)
+tokenize_words = pad_sequences(tokenize_words, maxlen=max_len, padding='post', truncating='post')
+print(tokenize_words)
+result = loaded_model.predict(tokenize_words)
+print(result)
+if result >= 0.7:
+    print('positive')
+else:
+    print('negative')
